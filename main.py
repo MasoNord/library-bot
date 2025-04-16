@@ -1,97 +1,114 @@
+import asyncio
 import logging
-import psycopg2
-import telebot
-
-BOT_TOKEN = "7721061443:AAEexxN9tMgYbDrXKVdiNh5iGgIxxXMzWo4"
-DB_HOST = "localhost" #5433 #Если БД находиться на одном компьютере с кодом бота!
-#Если нет, то вводиться айпи и порт!
-DB_USER = "postgres" # Название пользователя для БД
-DB_PASSWORD = "" # Пароль
-DB_NAME = "library-bot" # Как называеться БД ???
+import requests
+from bs4 import BeautifulSoup
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
 
 logging.basicConfig(level=logging.INFO)
-bot = telebot.TeleBot(BOT_TOKEN)
 
-# Функция для подключения к БД
-def get_db_connection():
-    return psycopg2.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, dbname=DB_NAME, client_encoding='UTF8')
-# Были проблемы с кодировкой! Нужно запомнить что писать именно как в БД!
+bot = Bot(token="7721061443:AAEexxN9tMgYbDrXKVdiNh5iGgIxxXMzWo4")
+dp = Dispatcher()
 
-# Эти 2 функции удалять буду! Они для проверки подключения к БД
-# Команда /check_db
-def check_db_connection():
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            dbname=DB_NAME
-        )
-        conn.close()
-        return True
-    except psycopg2.OperationalError as e:
-        print(f"Ошибка подключения к базе данных: {e}")
-        return False
+async def get_books(query):
+    search_url = 'https://spblib.ru/catalog'
+    payload = {
+        '_ru_spb_iac_esbo_portal_catalog_CatalogPortlet_book-QUERY': query
+    }
+    search_response = requests.post(search_url, data=payload)
 
-@bot.message_handler(commands=['check_db'])
-def check_db(message):
-    if check_db_connection():
-        bot.reply_to(message, "Подключение к базе данных успешно!")
+    if search_response.status_code == 200:
+        result_url = f"https://spblib.ru/catalog/-/books/available/search/{query.replace(' ', '+')}#search-results"
+        result_response = requests.get(result_url)
+
+        if result_response.status_code == 200:
+            soup = BeautifulSoup(result_response.text, 'html.parser')
+            books = []
+            for row in soup.select('tbody.table-data tr'):
+                title_tag = row.select_one('td.last a')
+                age_category = row.select_one('.age-category')
+                copy_status = row.select_one('.search-results-copy-status')
+
+                if title_tag:
+                    title = title_tag.text.strip()
+                    link = title_tag['href']
+                    age = age_category.text.strip() if age_category else "Нет информации о возрасте"
+                    status = copy_status.text.strip() if copy_status else "Нет информации о статусе"
+
+                    details = []
+                    item_details = row.select_one('.item-details')
+                    if item_details:
+                            detail_tags = item_details.find_all(['b', 'a'])
+                            for i in range(len(detail_tags)):
+                                if detail_tags[i].name == 'b':
+                                    next_tag = detail_tags[i + 1] if i + 1 < len(detail_tags) else None
+                                    if next_tag and next_tag.name == 'a':
+                                        if detail_tags[i].text.strip() == "Автор":
+                                            author = next_tag.text.strip()
+                                            details.append(f"Автор: {author}")
+                                        elif detail_tags[i].text.strip() == "Тематика":
+                                            subject = next_tag.text.strip()
+                                            details.append(f"Тематика: {subject}")
+                                        elif detail_tags[i].text.strip() == "Издательство":
+                                            publisher = next_tag.text.strip()
+                                            details.append(f"Издательство: {publisher}")
+                                        elif detail_tags[i].text.strip() == "Год издания":
+                                            year = next_tag.text.strip()
+                                            details.append(f"Год издания: {year}")
+
+                    details_str = "\n".join(details) if details else "Нет дополнительных деталей."
+                    availability_info = await get_availability(link)
+                    books.append(f"\"{title}\" (Возраст: {age})\nСтатус: {status}\n {details_str}\n {availability_info}\n")
+
+            if books:
+                return "\n".join(books)
+            else:
+                return "Книги не найдены."
+        else:
+            return "Не удалось получить данные с сайта результатов."
     else:
-        bot.reply_to(message, "Ошибка подключения к базе данных.")
+        return "Не удалось выполнить поиск."
 
-# Функция для поиска книг
-def search_books(query):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT b.title, b.author, b.publication_date, l.name, l.address 
-        FROM books b
-        JOIN book_library bl ON b.id = bl.book_id
-        JOIN libraries l ON bl.library_id = l.id
-        WHERE b.title ILIKE %s OR b.author ILIKE %s OR CAST(b.publication_date AS TEXT) ILIKE %s
-    """, ('%' + query + '%', '%' + query + '%', '%' + query + '%'))
-    results = cur.fetchall()
-    cur.close()
-    conn.close()
-    return results
+async def get_availability(book_url):
+    book_response = requests.get(book_url)
 
-# Функция уведомлений пользователей
-def add_notification(user_id, book_title):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("INSERT INTO notifications (user_id, book_title) VALUES (%s, %s)", (user_id, book_title))
-    conn.commit()
-    cur.close()
-    conn.close()
+    if book_response.status_code == 200:
+        book_soup = BeautifulSoup(book_response.text, 'html.parser')
+        availability_info = []
 
-# /start
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, "Добро пожаловать people? Введдии назван книг, автар, дата выход для нахождения партнера по твайаму вкуссу!).")
+        districts = book_soup.select('.tabs .district-group')
+        for district in districts:
+            district_name = district.select_one('a.pseudo-link').text.strip()
+            library_info = district.select_one('.library-information')
+            if library_info:
+                libraries = library_info.find_all('li', class_='library')
+                for library in libraries:
+                    library_name = library.select_one('span[itemprop="offeredBy"]').text.strip()
+                    availability = library.select_one('.label')
+                    availability_text = availability.text.strip() if availability else "Нет информации о наличии"
+                    availability_info.append(f"{district_name}: {library_name} - {availability_text}")
 
-# Обработчик сообщений
-@bot.message_handler(func=lambda message: True)
-def handle_search(message):
-    results = search_books(message.text)
-    if results:
-        response = ""
-        for result in results:
-            response += f"Название: {result[0]}\nАвтор: {result[1]}\nДата выхода: {result[2]}\nБиблиотека: {result[3]}, {result[4]}\n\n"
-        bot.reply_to(message, response)
+        return "\n".join(availability_info) if availability_info else "Нет информации о наличии."
     else:
-        keyboard = telebot.types.InlineKeyboardMarkup()
-        keyboard.add(telebot.types.InlineKeyboardButton(text="Уведомить о появлении", callback_data=f"notify_{message.text}"))
-        bot.reply_to(message, "Книги не найдены. Хотите получить уведомление?", reply_markup=keyboard)
+        return "Не удалось получить информацию о наличии."
 
-# Обработчик callback-запросов
-@bot.callback_query_handler(func=lambda call: call.data.startswith('notify_'))
-def process_callback_notify(call):
-    book_title = call.data.split('_')[1]
-    add_notification(call.from_user.id, book_title)
-    bot.answer_callback_query(call.id, "Уведомление добавлено!")
-    bot.send_message(call.from_user.id, "Вы будете уведомлены, когда книга появится.")
-# Тут ошибка сейчас (сверху), выход за пределы диапазонов, В БД нужно поменять тип данных(на больший) в таблице уведомлений!
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    await message.answer("Здравствуйте! Введите /search <название книги>, чтобы найти книгу в библиотеках Санкт-Петербурга.")
 
-if __name__ == '__main__':
-    bot.polling(none_stop=True)
+@dp.message(Command("search"))
+async def cmd_search(message: types.Message):
+    query = message.text.split(maxsplit=1)
+    if len(query) < 2:
+        await message.reply("Пожалуйста, укажите название книги после команды /search.")
+        return
+    await message.reply("Ищу книги, пожалуйста подождите...")
+    books = await get_books(query[1])
+    await message.reply(books)
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
