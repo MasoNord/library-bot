@@ -1,14 +1,5 @@
-import asyncio
-import logging
 import requests
 from bs4 import BeautifulSoup
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-
-logging.basicConfig(level=logging.INFO)
-
-bot = Bot(token="7721061443:AAEexxN9tMgYbDrXKVdiNh5iGgIxxXMzWo4")
-dp = Dispatcher()
 
 async def get_books(query):
     search_url = 'https://spblib.ru/catalog'
@@ -38,23 +29,23 @@ async def get_books(query):
                     details = []
                     item_details = row.select_one('.item-details')
                     if item_details:
-                            detail_tags = item_details.find_all(['b', 'a'])
-                            for i in range(len(detail_tags)):
-                                if detail_tags[i].name == 'b':
-                                    next_tag = detail_tags[i + 1] if i + 1 < len(detail_tags) else None
-                                    if next_tag and next_tag.name == 'a':
-                                        if detail_tags[i].text.strip() == "Автор":
-                                            author = next_tag.text.strip()
-                                            details.append(f"Автор: {author}")
-                                        elif detail_tags[i].text.strip() == "Тематика":
-                                            subject = next_tag.text.strip()
-                                            details.append(f"Тематика: {subject}")
-                                        elif detail_tags[i].text.strip() == "Издательство":
-                                            publisher = next_tag.text.strip()
-                                            details.append(f"Издательство: {publisher}")
-                                        elif detail_tags[i].text.strip() == "Год издания":
-                                            year = next_tag.text.strip()
-                                            details.append(f"Год издания: {year}")
+                        detail_tags = item_details.find_all(['b', 'a'])
+                        for i in range(len(detail_tags)):
+                            if detail_tags[i].name == 'b':
+                                next_tag = detail_tags[i + 1] if i + 1 < len(detail_tags) else None
+                                if next_tag and next_tag.name == 'a':
+                                    if detail_tags[i].text.strip() == "Автор":
+                                        author = next_tag.text.strip()
+                                        details.append(f"Автор: {author}")
+                                    elif detail_tags[i].text.strip() == "Тематика":
+                                        subject = next_tag.text.strip()
+                                        details.append(f"Тематика: {subject}")
+                                    elif detail_tags[i].text.strip() == "Издательство":
+                                        publisher = next_tag.text.strip()
+                                        details.append(f"Издательство: {publisher}")
+                                    elif detail_tags[i].text.strip() == "Год издания":
+                                        year = next_tag.text.strip()
+                                        details.append(f"Год издания: {year}")
 
                     details_str = "\n".join(details) if details else "Нет дополнительных деталей."
                     availability_info = await get_availability(link)
@@ -90,25 +81,6 @@ async def get_availability(book_url):
 
         return "\n".join(availability_info) if availability_info else "Нет информации о наличии."
     else:
-        return "Не удалось получить информацию о наличии."
+        return "Не удалось получить информацию о наличии книг"
 
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await message.answer("Здравствуйте! Введите /search <название книги>, чтобы найти книгу в библиотеках Санкт-Петербурга.")
-
-@dp.message(Command("search"))
-async def cmd_search(message: types.Message):
-    query = message.text.split(maxsplit=1)
-    if len(query) < 2:
-        await message.reply("Пожалуйста, укажите название книги после команды /search.")
-        return
-    await message.reply("Ищу книги, пожалуйста подождите...")
-    books = await get_books(query[1])
-    await message.reply(books)
-
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
 
