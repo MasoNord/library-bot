@@ -7,7 +7,7 @@
 - requests
 - python-dotenv
 
-# Структура проект
+# Структура проектa
 
 ```
 project
@@ -25,11 +25,11 @@ project
 ```
 
 # Установка
-1. Колнировать репозиторий по следующуей ссылке:
+1. Клонировать репозиторий по следующуей ссылке:
 ```
 https://github.com/MasoNord/library-bot.git
 ```
-2. Перейти в директорию проекта knvsh:
+2. Перейти в директорию проекта libary-bot:
 ```
 cd libary-bot
 ```
@@ -52,7 +52,7 @@ pip install -r requirements.txt
 5. Создать файл `.env` в корне проекта:
 ```
 # Bot Configuration
-BOT_TOKEN=<Your Bot Token>
+API_TOKEN=<Your Bot Token>
 ```
 
 6. Получить токен бота через @BotFather и вставить его в `.env`
