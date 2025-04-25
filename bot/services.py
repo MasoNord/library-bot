@@ -1,18 +1,23 @@
 import requests
+import logging
 from bs4 import BeautifulSoup
 
 async def get_books(query):
+    logging.info("Вызов функции get_books")
     search_url = 'https://spblib.ru/catalog'
     payload = {
         '_ru_spb_iac_esbo_portal_catalog_CatalogPortlet_book-QUERY': query
     }
     search_response = requests.post(search_url, data=payload)
-
+    logging.info(f"Выполнение POST реквеста к сайту {search_url}")
     if search_response.status_code == 200:
+        logging.info("POST реквест успешно был выполнен")
         result_url = f"https://spblib.ru/catalog/-/books/available/search/{query.replace(' ', '+')}#search-results"
         result_response = requests.get(result_url)
-
+        logging.info(f"Выполнение GET запроса {result_url}")
         if result_response.status_code == 200:
+            logging.info("GET реквест успешно был выполнен")
+            logging.info("Формирование ответа на найденную книгу")
             soup = BeautifulSoup(result_response.text, 'html.parser')
             books = []
             for row in soup.select('tbody.table-data tr'):
@@ -52,17 +57,22 @@ async def get_books(query):
                     books.append(f"\"{title}\" (Возраст: {age})\nСтатус: {status}\n {details_str}\n {availability_info}\n")
 
             if books:
+                logging.debug(f"Полученные книги {books}")
+                logging.info("GET реквест успешно был выполнен")
                 return "\n".join(books)
             else:
+                logging.warning("Книги были не найдены")
                 return "Книги не найдены."
         else:
+            logging.warning("Ошибка в выполнении GET запроса: Не удалось получить данные с сайта результатов.")
             return "Не удалось получить данные с сайта результатов."
     else:
+        logging.warning("Ошибка при выполнении POST запроса: Не удалось выполнить поиск.")
         return "Не удалось выполнить поиск."
 
 async def get_availability(book_url):
     book_response = requests.get(book_url)
-
+    logging.info(f"Выполенние GET реквеста {book_url}")
     if book_response.status_code == 200:
         book_soup = BeautifulSoup(book_response.text, 'html.parser')
         availability_info = []
@@ -81,6 +91,7 @@ async def get_availability(book_url):
 
         return "\n".join(availability_info) if availability_info else "Нет информации о наличии."
     else:
+        logging.warning("Ошибка при выполнении GET реквеста: Не удалось получить информацию о наличии книг")
         return "Не удалось получить информацию о наличии книг"
 
 
